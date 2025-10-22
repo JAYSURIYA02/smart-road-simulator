@@ -1,0 +1,37 @@
+# Ignore Python cache and environment
+__pycache__/
+venv/
+ven3/
+
+# Ignore temporary or system files
+*.log
+*.tmp
+.DS_Store
+.vscode/
+
+# Ignore build/output folders
+dist/
+build/
+output/
+
+# Ignore dataset and large media
+data/
+sample_videos/
+
+
+# Ignore Python virtual envs
+venv/
+ven3/
+__pycache__/
+*.pyd
+*.dll
+
+# Ignore large videos and model weights
+*.mp4
+*.avi
+*.mkv
+*.mov
+*.pt
+*.ckpt
+*.h5
+*.onnx
