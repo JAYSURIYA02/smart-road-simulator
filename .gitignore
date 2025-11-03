@@ -31,7 +31,6 @@ __pycache__/
 *.avi
 *.mkv
 *.mov
-*.pt
 *.ckpt
 *.h5
 *.onnx
