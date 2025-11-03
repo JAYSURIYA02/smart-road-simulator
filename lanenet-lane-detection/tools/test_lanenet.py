@@ -6,16 +6,15 @@
 # @File    : test_lanenet.py
 # @IDE: PyCharm Community Edition
 """
-test LaneNet model on single image
+test LaneNet model on single image and save lane overlay image
 """
 import argparse
 import os.path as ops
 import time
-
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
+
 # Ensure TF1.x style for LaneNet
 tf.compat.v1.disable_eager_execution()
 
@@ -30,64 +29,36 @@ from local_utils.config_utils import parse_config_utils
 from local_utils.log_util import init_logger
 
 
-
-
-
 CFG = parse_config_utils.lanenet_cfg
 LOG = init_logger.get_logger(log_file_name_prefix='lanenet_test')
 
 
-def init_args():
-    """
-
-    :return:
-    """
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--image_path', type=str, help='The image path or the src image save dir')
-    parser.add_argument('--weights_path', type=str, help='The model weights path')
-    parser.add_argument('--with_lane_fit', type=args_str2bool, help='If need to do lane fit', default=True)
-
-    return parser.parse_args()
-
-
 def args_str2bool(arg_value):
-    """
-
-    :param arg_value:
-    :return:
-    """
     if arg_value.lower() in ('yes', 'true', 't', 'y', '1'):
         return True
-
     elif arg_value.lower() in ('no', 'false', 'f', 'n', '0'):
         return False
     else:
         raise argparse.ArgumentTypeError('Unsupported value encountered.')
 
 
-def minmax_scale(input_arr):
-    """
-
-    :param input_arr:
-    :return:
-    """
-    min_val = np.min(input_arr)
-    max_val = np.max(input_arr)
-
-    output_arr = (input_arr - min_val) * 255.0 / (max_val - min_val)
-
-    return output_arr
+def init_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--image_path', type=str, help='The input image path')
+    parser.add_argument('--weights_path', type=str, help='The model weights path')
+    parser.add_argument('--with_lane_fit', type=args_str2bool, default=True, help='If need to do lane fit')
+    parser.add_argument('--save_path', type=str, default='lane_result.jpg', help='Path to save the lane mask image')
+    return parser.parse_args()
 
 
-def test_lanenet(image_path, weights_path, with_lane_fit=True):
-    """Simplified single-image LaneNet test"""
-
+def test_lanenet(image_path, weights_path, save_path= "lane_result1.jpg", with_lane_fit=True):
+    """Run LaneNet and save lane overlay image"""
     assert ops.exists(image_path), '{:s} not exist'.format(image_path)
 
     LOG.info('Start reading image and preprocessing')
     t_start = time.time()
     image = cv2.imread(image_path, cv2.IMREAD_COLOR)
-    image_vis = image
+    image_vis = image.copy()
     image = cv2.resize(image, (512, 256), interpolation=cv2.INTER_LINEAR)
     image = image / 127.5 - 1.0
     LOG.info('Image load complete, cost time: {:.5f}s'.format(time.time() - t_start))
@@ -100,12 +71,11 @@ def test_lanenet(image_path, weights_path, with_lane_fit=True):
 
     postprocessor = lanenet_postprocess.LaneNetPostProcessor(cfg=CFG)
 
-    # Session config
+    # TensorFlow session setup
     sess_config = tf.compat.v1.ConfigProto()
     sess_config.gpu_options.allow_growth = True
     sess = tf.compat.v1.Session(config=sess_config)
 
-    # Restore variables
     with tf.compat.v1.variable_scope('moving_avg'):
         variable_averages = tf.train.ExponentialMovingAverage(CFG.SOLVER.MOVING_AVE_DECAY)
         variables_to_restore = variable_averages.variables_to_restore()
@@ -115,7 +85,6 @@ def test_lanenet(image_path, weights_path, with_lane_fit=True):
     with sess.as_default():
         saver.restore(sess=sess, save_path=weights_path)
 
-        # Single forward pass (no 500-loop)
         binary_seg_image, instance_seg_image = sess.run(
             [binary_seg_ret, instance_seg_ret],
             feed_dict={input_tensor: [image]}
@@ -130,27 +99,23 @@ def test_lanenet(image_path, weights_path, with_lane_fit=True):
         )
 
         mask_image = postprocess_result['mask_image']
-        if with_lane_fit:
+        cv2.imwrite(save_path, mask_image)
+        LOG.info(f"✅ Lane mask image saved at: {save_path}")
+
+        if with_lane_fit and 'fit_params' in postprocess_result:
             lane_params = postprocess_result['fit_params']
             LOG.info('Model fitted {:d} lanes'.format(len(lane_params)))
-            for i in range(len(lane_params)):
-                LOG.info('Fitted 2-order lane {:d} curve param: {}'.format(i + 1, lane_params[i]))
-
-        # Show results
-        plt.figure('mask_image')
-        plt.imshow(mask_image[:, :, (2, 1, 0)])
-        plt.figure('src_image')
-        plt.imshow(image_vis[:, :, (2, 1, 0)])
-        plt.show()
+            for i, params in enumerate(lane_params):
+                LOG.info('Fitted 2-order lane {:d} curve param: {}'.format(i + 1, params))
 
     sess.close()
 
 
 if __name__ == '__main__':
-    """
-    test code
-    """
-    # init args
     args = init_args()
-
-    test_lanenet(args.image_path, args.weights_path, with_lane_fit=args.with_lane_fit)
+    test_lanenet(
+        image_path=args.image_path,
+        weights_path=args.weights_path,
+        save_path=args.save_path,
+        with_lane_fit=args.with_lane_fit
+    )
